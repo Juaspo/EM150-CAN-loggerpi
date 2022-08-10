@@ -78,9 +78,11 @@ def led_lightup(led_nr):
 def button_callback():
     GPIO.remove_event_detect(16)
     print("Button pressed!")
-    
-    led_thread = threading.Thread(target=send_can, args=())
-    led_thread.start()
+
+
+    periodic_send.toggle_broadcast()
+    #led_thread = threading.Thread(target=send_can, args=())
+    #led_thread.start()
 
     GPIO.add_event_detect(16, GPIO.RISING, callback=lambda x: button_callback(), bouncetime=300)
 
@@ -100,12 +102,73 @@ def send_can():
 
     can0.send(msg1)
     print("%s sent", msg1)
-    time.sleep(0.1)
+    time.sleep(0.05)
     can0.send(msg2)
     print("%s sent", msg2)
 
-    os.system('sudo ifconfig can0 down')
-    
+class PeriodicSend():
+    def __init__(self, *arg, **kwargs):
+        self.msg1_id = 0x10261022
+        self.msg2_id = 0x10261023
+        self.msg1_payload = [0x01, 0xe9, 0x29, 0x09, 0x52, 0x03, 0xe8, 0x03]
+        self.msg2_payload = [0x1c, 0x23, 0x00, 0x02, 0x32, 0x00, 0x14, 0x00]
+
+        self.can = None
+        self.task = None
+
+        self.msg1 = None
+        self.msg2 = None
+
+        self.active_broadcast = False
+
+        self.can_send_setup()
+
+    def can_send_setup(self):
+        os.system('sudo ip link set can0 type can bitrate 250000')
+        os.system('sudo ifconfig can0 up')
+
+        self.can0 = can.interface.Bus(channel = 'can0', bustype = 'socketcan')# socketcan_native
+
+        self.msg1 = can.Message(arbitration_id=self.msg1_id, data=self.msg1_payload, is_extended_id=True)    
+        self.msg2 = can.Message(arbitration_id=self.msg2_id, data=self.msg2_payload, is_extended_id=True)
+        print("ip link and intercafe setup done")
+
+
+    def toggle_broadcast(self):
+        if self.active_broadcast:
+            self.stop_sending()
+        else:
+            self.start_sending()
+
+    def stop_sending(self):
+        self.task.stop()
+        print("Stopped periodic CAN send")
+        self.active_broadcast = False
+        return self.active_broadcast
+
+    def start_sending(self, period=1):
+        self.task = self.can0.send_periodic(self.msg1, period)
+        if not isinstance(self.task, can.ModifiableCyclicTaskABC):
+            print("This interface does not seem to support mods")
+            self.task.stop()
+            self.active_broadcast = False
+            return
+
+        print("Started periodic CAN send")
+        self.active_broadcast = True
+        return self.active_broadcast
+
+    def modify_data(self, data_entry=None):
+        if data is not None:
+            for key, value in data_entry.items():
+                self.msg1.data[key] = value
+            self.task.modify_data(self.msg1)
+            print("CAN data modified")
+
+    def exit_cleanup(self):
+        os.system('sudo ifconfig can0 down')
+        
+periodic_send = PeriodicSend()
 
 GPIO.setwarnings(False)  # Ignore warnings
 GPIO.setmode(GPIO.BOARD)  # Use physical board layout
@@ -117,4 +180,5 @@ GPIO.add_event_detect(16, GPIO.RISING, callback=lambda x: button_callback(), bou
 
 message = input("Press enter to quit\n\n")  # Run until someone presses enter
 
+periodic_send.exit_cleanup()
 GPIO.cleanup()  # Clean up

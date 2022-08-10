@@ -1,6 +1,8 @@
 import os
 import can
 import binascii
+from datetime import datetime
+import time
 
 
 ############ bit/byte manupilations
@@ -45,6 +47,16 @@ def assemble_bytes(high_byte, low_byte, divide=0):
         return ((high_byte<<8) + low_byte)/divide
     return (high_byte<<8) + low_byte
 
+
+def time_function(timestamp = None):
+    if timestamp is not None:
+        print ("CAN timestamp:", datetime.fromtimestamp(timestamp))
+
+    date_time = datetime.now()
+    my_date = date_time.strftime("%Y-%m-%d")
+    print("RPi date:", my_date)
+    my_time = date_time.strftime("%H:%M:%S.%f")
+    print("RPi time:", my_time)
 
 def print_hex(msg):
     print("in a for loop")
@@ -143,16 +155,20 @@ os.system('sudo ifconfig can0 up')
 can_id_filter = [
                 {"can_id": 0x1026102F, "can_mask":0x1FFFFFF0, "extended": True}
                 ]
-#can0 = can.interface.Bus(channel = 'can0', bustype = 'socketcan', can_filters=can_id_filter)# socketcan_native
-can0 = can.interface.Bus(channel = 'can0', bustype = 'socketcan') # no filters
-
+#can0 = can.interface.Bus(channel='can0', bustype='socketcan', can_filters=can_id_filter)# socketcan_native
+#can0 = can.interface.Bus(channel='can0', bustype='socketcan') # no filters
+can0 = can.ThreadSafeBus(channel='can0', interface='socketcan')
 
 msg = can0.recv(10.0)
+
+
 
 if msg is None:
     print('Timeout occurred, no message.')
 else:
+
     print ("Can data:", msg)
+    time_function(msg.timestamp)
 
     can_id = msg.arbitration_id
     can_data = msg.data
