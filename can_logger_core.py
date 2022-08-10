@@ -4,8 +4,8 @@
 
 '''
 id = 0x10261022 
-data = 00 E2 29 09 52 03 E8 03
-Error = 0
+data = 01 E9 29 09 52 03 E8 03
+Error = motor error
 Lock moto = 0
 Brake = 1
 Cruise = 0
@@ -87,7 +87,7 @@ def button_callback():
 def send_can():
     msg1_id = 0x10261022
     msg2_id = 0x10261023
-    msg1_payload = [0x00, 0xe2, 0x29, 0x09, 0x52, 0x03, 0xe8, 0x03]
+    msg1_payload = [0x01, 0xe9, 0x29, 0x09, 0x52, 0x03, 0xe8, 0x03]
     msg2_payload = [0x1c, 0x23, 0x00, 0x02, 0x32, 0x00, 0x14, 0x00]
 
     os.system('sudo ip link set can0 type can bitrate 250000')
@@ -99,14 +99,13 @@ def send_can():
     msg2 = can.Message(arbitration_id=msg2_id, data=msg2_payload, is_extended_id=True)
 
     can0.send(msg1)
-    print("%s sent", msg1.data)
+    print("%s sent", msg1)
     time.sleep(0.1)
     can0.send(msg2)
-    print("msg2 sent")
+    print("%s sent", msg2)
 
     os.system('sudo ifconfig can0 down')
     
-
 
 GPIO.setwarnings(False)  # Ignore warnings
 GPIO.setmode(GPIO.BOARD)  # Use physical board layout
