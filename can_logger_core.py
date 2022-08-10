@@ -2,6 +2,32 @@
 
 # Script created to monitor canbus messages from EM150 controller
 
+'''
+id = 0x10261022 
+data = 00 E2 29 09 52 03 E8 03
+Error = 0
+Lock moto = 0
+Brake = 1
+Cruise = 0
+Side brake = 0
+PRND = N
+Gears = 3(S)
+RPM = 2345
+Battery = 85.0
+Current = 100.0
+
+0x10261023 DLC 8
+data = 1C 23 00 02 32 00 14 00
+Controller temp = 28
+motor temp = 35
+Hall = B
+throttle = 50
+Error2 = Under voltage, Motor over temp
+'''
+
+
+
+
 __all__ = []
 __version__ = "0.0.1"
 __date__ = "2022-08-02"
@@ -50,34 +76,33 @@ def led_lightup(led_nr):
     GPIO.output(led_pin[led_nr], GPIO.LOW)
 
 def button_callback():
-    #GPIO.remove_event_detect(16)
-    global led_nr
+    GPIO.remove_event_detect(16)
     print("Button pressed!")
-    print("Led nr: ", led_nr)
     
-    led_thread = threading.Thread(target=led_lightup, args=(led_nr,))
+    led_thread = threading.Thread(target=send_can, args=())
     led_thread.start()
-    send_can()
 
-    led_nr = led_nr + 1
-    if led_nr >= 3:
-        led_nr = 0
-
-    #GPIO.add_event_detect(16, GPIO.RISING, callback=lambda x: button_callback(), bouncetime=300)
+    GPIO.add_event_detect(16, GPIO.RISING, callback=lambda x: button_callback(), bouncetime=300)
 
 def send_can():
+    msg1_id = 0x10261022
+    msg2_id = 0x10261023
+    msg1_payload = [0x00, 0xe2, 0x29, 0x09, 0x52, 0x03, 0xe8, 0x03]
+    msg2_payload = [0x1c, 0x23, 0x00, 0x02, 0x32, 0x00, 0x14, 0x00]
+
     os.system('sudo ip link set can0 type can bitrate 250000')
     os.system('sudo ifconfig can0 up')
 
     can0 = can.interface.Bus(channel = 'can0', bustype = 'socketcan')# socketcan_native
 
-    msg = can.Message(arbitration_id=0x123, data=[0, 1, 2, 3, 4, 5, 6, 7], is_extended_id=False)
+    msg1 = can.Message(arbitration_id=msg1_id, data=msg1_payload, is_extended_id=True)    
+    msg2 = can.Message(arbitration_id=msg2_id, data=msg2_payload, is_extended_id=True)
 
-    can0.send(msg)
-
-    #for n in range(5):
-    #    can0.send(msg)
-    #    time.sleep(1)
+    can0.send(msg1)
+    print("%s sent", msg1.data)
+    time.sleep(0.1)
+    can0.send(msg2)
+    print("msg2 sent")
 
     os.system('sudo ifconfig can0 down')
     
