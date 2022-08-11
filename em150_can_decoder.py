@@ -5,8 +5,11 @@ from datetime import datetime
 import time
 import os.path
 import click
+#from tabulate import tabulate
+from prettytable import PrettyTable
 
-g_TEST_PAYLOAD = {"arbitration_id": 0x1234, "data": [0x01, 0xe9, 0x29, 0x09, 0x52, 0x03, 0xe8, 0x03]}
+g_TEST_PAYLOAD1 = {"arbitration_id": 0x10261022, "data": [0x01, 0xe9, 0x29, 0x09, 0x52, 0x03, 0xe8, 0x03]}
+g_TEST_PAYLOAD2 = {"arbitration_id": 0x10261023, "data": [0x1c, 0x23, 0x00, 0x02, 0x32, 0x00, 0x14, 0x00]}
 
 @click.command()
 #@click.option('-c', '--cfg_file', 'cfg_file', default='can_config.yml',
@@ -30,8 +33,9 @@ g_TEST_PAYLOAD = {"arbitration_id": 0x1234, "data": [0x01, 0xe9, 0x29, 0x09, 0x5
 def main(arb_id: str, can_data: str, dry_run: bool, ofile_path: str) -> dict:
     ecd = EmControllerDecoder()
     if dry_run:
-        result = ecd.decode_id22(g_TEST_PAYLOAD)
-        print(result)
+        result = ecd.decode_id22(g_TEST_PAYLOAD1)
+        result = ecd.decode_id23(g_TEST_PAYLOAD2)
+        ecd.print_results(result)
 
 
 class EmControllerDecoder():
@@ -65,8 +69,8 @@ class EmControllerDecoder():
         print("\n########## First part of CAN message ##########")
 
         # byte0: error list
-        errors = self.check_bits(msgdata[0])
-        self.decoded_can_data["error1"] = self.check_errors(errors)
+        
+        self.decoded_can_data["error1"] = self.check_errors1(errors)
 
         # byte1: mark state and gear
         byte_split = self.split_bytes(msgdata[1])
@@ -94,13 +98,15 @@ class EmControllerDecoder():
         return self.decoded_can_data
 
 
-    def decode_id23(self):
-        print("\n*********** Second part of CAN message ***********")
-        print("Controller temprature: ", msgdata[0])
-        print("Motor temprature: ", msgdata[1])
-        print("Motor pos", motor_position(msgdata[3]))
-        print("Throttle signal: ", msgdata[4])
-        print("Bike faults:", check_errors2(msgdata[6]))
+    def decode_id23(self, msg_data):
+        msgdata = msg_data.get("data", None)
+        msg_id = msg_data.get("arb_id", None)
+        self.decoded_can_data["arb_id"] = msg_id
+        self.decoded_can_data["ctrl_temp"] = msgdata[0]
+        self.decoded_can_data["motor_temp"] = msgdata[1]
+        self.decoded_can_data["motor_position"] = self.motor_position(msgdata[3])
+        self.decoded_can_data["throttle"] = msgdata[4]
+        self.decoded_can_data["errors2"] = self.check_errors2(msgdata[6])
 
         return self.decoded_can_data
 
@@ -143,16 +149,20 @@ class EmControllerDecoder():
 
 
     def time_function(self, timestamp = None):
+        #Todo add info
         if timestamp is not None:
-            print ("CAN timestamp:", datetime.fromtimestamp(timestamp))
+            return {"datetime": datetime.fromtimestamp(timestamp)}
+            #Todo: revise if time function is still needed and if datetime should be split
 
         date_time = datetime.now()
         my_date = date_time.strftime("%Y-%m-%d")
         print("RPi date:", my_date)
         my_time = date_time.strftime("%H:%M:%S.%f")
         print("RPi time:", my_time)
+        return {"date": my_date, "time": my_time}
 
     def print_hex(self, msg):
+        #Todo add info
         print("in a for loop")
         msg_data=""
         try:
@@ -165,19 +175,36 @@ class EmControllerDecoder():
 
         if msg_data: print("data:", msg_data)
 
+
+    def print_results(self, decoded_results):
+        tabulate = PrettyTable(["Key", "Value"])
+        for key, value in decoded_results.items():
+            tabulate.add_row([key, value])
+
+        print(tabulate)
+
+
     ############### 1022 decode
 
-    def check_errors(self, errors):
+    def check_errors1(self, errors_byte):
+        #Todo add info
         errors_list = []
         error_codes =   [
                         "motor error", "hall error", "throttle error",
-                        "controller error", "brake error", "laimp home"
+                        "controller error", "brake error", "limp home"
                         ]
-        if(len(errors)):
+
+        # Todo add fail detection by anding 0xC0 instead and handle any errors
+        errors_byte = errors_byte & 0xC0
+        if errors_byte & 0xC0:
+            print("Error! invalid data received")
+            return ["invalid input", errors_byte]
+        errors = self.check_bits(errors_byte)
+        if errors:
             for x in errors:
                 errors_list.append(error_codes[x])
         else:
-            print("no errors!")
+            return None
         return errors_list
 
 
@@ -188,7 +215,8 @@ class EmControllerDecoder():
         '''
         if mark_byte:
             mark_list = []
-            print("mark_byte:", mark_byte)
+
+            marks_triggered = marks_triggered & 0x0F #only use the lowest bits
             marks_triggered = self.check_bits(mark_byte)
             mark_codes =    [
                             "lock moto", "brake", "cruise", "side brake"
@@ -204,14 +232,15 @@ class EmControllerDecoder():
         as a char representation
         '''
 
+        #Todo: add check to see that not multiple states and gears are set
         state = ['P', 'R', 'N', 'D']
         gears = ['1', '2', '3', 'S']
 
-        s_value = value & 3
-        g_value = (value >> 2) & 3
+        s_value = value & 0x03
+        g_value = (value >> 2) & 0x03
         #print("Bike state: %s\nBike gear: %s" % 
         #    (state[s_value], gears[g_value]))
-        return [s_value, g_value]
+        return [state[s_value], gears[g_value]]
 
     ######################## 1023 decode
 
@@ -223,7 +252,10 @@ class EmControllerDecoder():
             position = ['A', 'B', 'C']
             motor_pos = ""
 
+            #TODO: Add fail trigger if all three poles are triggered at the same time
+            rotation_byte = rotation_byte & 0x07 # Only look at the first three bits
             hall_trigger_list = self.check_bits(rotation_byte)
+
             for x in hall_trigger_list:
                     motor_pos += position[x]
             return motor_pos
@@ -232,12 +264,15 @@ class EmControllerDecoder():
             return None
 
     def check_errors2(self, error2_byte):
+        #Todo add info
         if (error2_byte):
             faults_list = []
             err2 =  [
                     "Over current", "Over voltag", "Under voltage",
                     "Controller overtemp", "Motor overtemp"
                     ]
+
+            errors_list = errors_list & 0x1F # only use 5 first bits
             errors_list = self.check_bits(error2_byte)
             
             for x in errors_list:

@@ -99,6 +99,7 @@ def send_can():
 
     msg1 = can.Message(arbitration_id=msg1_id, data=msg1_payload, is_extended_id=True)    
     msg2 = can.Message(arbitration_id=msg2_id, data=msg2_payload, is_extended_id=True)
+    msgd = can.Message(arbitration_id=msgd_id, data=msgd_payload, is_extended_id=True)
 
     can0.send(msg1)
     print("%s sent", msg1)
@@ -110,8 +111,10 @@ class PeriodicSend():
     def __init__(self, *arg, **kwargs):
         self.msg1_id = 0x10261022
         self.msg2_id = 0x10261023
+        self.msgd_id = 0x1026105A
         self.msg1_payload = [0x01, 0xe9, 0x29, 0x09, 0x52, 0x03, 0xe8, 0x03]
         self.msg2_payload = [0x1c, 0x23, 0x00, 0x02, 0x32, 0x00, 0x14, 0x00]
+        self.msgd_payload = [0x01, 0x00, 0x00, 0x07, 0x00, 0x00, 0x00, 0x00]
 
         self.can = None
         self.task = None
@@ -119,8 +122,10 @@ class PeriodicSend():
 
         self.msg1 = None
         self.msg2 = None
+        self.msgd = None
 
         self.active_broadcast = False
+        self.display_broadcast = False
 
         self.can_send_setup()
 
@@ -132,7 +137,34 @@ class PeriodicSend():
 
         self.msg1 = can.Message(arbitration_id=self.msg1_id, data=self.msg1_payload, is_extended_id=True)    
         self.msg2 = can.Message(arbitration_id=self.msg2_id, data=self.msg2_payload, is_extended_id=True)
+        self.msgd = can.Message(arbitration_id=self.msgd_id, data=self.msgd_payload, is_extended_id=True)
         print("ip link and intercafe setup done")
+
+
+    def toggle_display(self):
+        if self.display_broadcast:
+            self.stop_display_send()
+        else:
+            self.start_display_send()
+
+    
+    def stop_display_send(self):
+        self.taskd.stop()
+        print("Stopped display CAN send")
+        self.display_broadcast = False
+        return self.display_broadcast
+
+
+    def start_display_send(self, period=0.25):
+        self.taskd = self.can0.send_periodic(self.msgd, period)
+        if not isinstance(self.taskd, can.ModifiableCyclicTaskABC):
+            print("This interface does not seem to support mods")
+            self.taskd.stop()
+            self.display_broadcast = False
+            return
+
+        self.display_broadcast = True
+        return self.display_broadcast
 
 
     def toggle_broadcast(self):
@@ -190,7 +222,15 @@ GPIO.setup(16, GPIO.IN, pull_up_down=GPIO.PUD_UP)  # Set pin 16 to be input with
 
 GPIO.add_event_detect(16, GPIO.RISING, callback=lambda x: button_callback(), bouncetime=300)  # Setup event on pin 16 rising edge
 
-message = input("Press enter to quit\n\n")  # Run until someone presses enter
+user_input = None
+while user_input != "":
+    user_input = input("Press enter to quit\n")  # Run until someone presses enter
+    if user_input == "c" or user_input == "t":
+        periodic_send.toggle_broadcast()
+    elif user_input == "d":
+        periodic_send.toggle_display()
+    else:
+        print("no code yet")
 
 periodic_send.exit_cleanup()
 GPIO.cleanup()  # Clean up
