@@ -115,6 +115,7 @@ class PeriodicSend():
 
         self.can = None
         self.task = None
+        self.task2 = None
 
         self.msg1 = None
         self.msg2 = None
@@ -142,15 +143,18 @@ class PeriodicSend():
 
     def stop_sending(self):
         self.task.stop()
+        self.task2.stop()
         print("Stopped periodic CAN send")
         self.active_broadcast = False
         return self.active_broadcast
 
-    def start_sending(self, period=1):
+    def start_sending(self, period=0.1):
         self.task = self.can0.send_periodic(self.msg1, period)
+        self.task2 = self.can0.send_periodic(self.msg2, period)
         if not isinstance(self.task, can.ModifiableCyclicTaskABC):
             print("This interface does not seem to support mods")
             self.task.stop()
+            self.task2.stop()
             self.active_broadcast = False
             return
 
@@ -158,15 +162,23 @@ class PeriodicSend():
         self.active_broadcast = True
         return self.active_broadcast
 
-    def modify_data(self, data_entry=None):
+    def modify_data_task(self, task_nr, data_entry=None):
         if data is not None:
-            for key, value in data_entry.items():
-                self.msg1.data[key] = value
-            self.task.modify_data(self.msg1)
+            if task_nr == 1:
+                for key, value in data_entry.items():
+                    self.msg1.data[key] = value
+                self.task.modify_data(self.msg1)
+
+            elif task_nr == 2:
+                for key, value in data_entry.items():
+                    self.msg2.data[key] = value
+                self.task2.modify_data(self.msg2)
+            
             print("CAN data modified")
 
     def exit_cleanup(self):
         os.system('sudo ifconfig can0 down')
+        print("CAN link closed")
         
 periodic_send = PeriodicSend()
 
