@@ -155,7 +155,7 @@ class PeriodicSend():
         return self.display_broadcast
 
 
-    def start_display_send(self, period=0.25):
+    def start_display_send(self, period=1):
         self.taskd = self.can0.send_periodic(self.msgd, period)
         if not isinstance(self.taskd, can.ModifiableCyclicTaskABC):
             print("This interface does not seem to support mods")
@@ -164,6 +164,7 @@ class PeriodicSend():
             return
 
         self.display_broadcast = True
+        print("Display boradcast started")
         return self.display_broadcast
 
 

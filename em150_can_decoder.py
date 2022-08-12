@@ -1,11 +1,9 @@
 import os
 import can
 import binascii
-from datetime import datetime
-import time
-import os.path
 import click
-#from tabulate import tabulate
+import time
+from datetime import datetime
 from prettytable import PrettyTable
 
 g_TEST_PAYLOAD1 = {"arbitration_id": 0x10261022, "data": [0x01, 0xe9, 0x29, 0x09, 0x52, 0x03, 0xe8, 0x03]}
@@ -287,3 +285,4 @@ if __name__=="__main__":
     exit_code = 0
     exit_code = main()
     sys.exit(exit_code)
+    
