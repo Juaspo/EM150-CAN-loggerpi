@@ -6,6 +6,8 @@ import time
 from datetime import datetime
 from prettytable import PrettyTable
 
+import em150candecoder
+
 g_TEST_PAYLOAD1 = {"arbitration_id": 0x10261022, "data": [0x01, 0xe9, 0x29, 0x09, 0x52, 0x03, 0xe8, 0x03]}
 g_TEST_PAYLOAD2 = {"arbitration_id": 0x10261023, "data": [0x1c, 0x23, 0x00, 0x02, 0x32, 0x00, 0x14, 0x00]}
 
@@ -22,11 +24,19 @@ def main(arb_id: str, can_data: str, dry_run: bool, ofile_path: str) -> dict:
     my_receiver = CanBusListener()
     my_receiver.simple_listener()
 
+    my_decoder = em150candecoder.EmControllerDecoder()
+
+    encoded_messages = None
+
     user_input = None
     while user_input != "":
         user_input = input("Press enter to quit\n")  # Run until someone presses enter
         if user_input == "r":
-            print(my_receiver.get_buffered_messages())
+            encoded_messages = my_receiver.get_buffered_messages()
+
+            message_list = convert_msg(encoded_messages)
+            my_decoder.decode_list(encoded_messages)
+
         elif user_input == "e":
             my_receiver.exit_program()
 
@@ -36,6 +46,22 @@ def main(arb_id: str, can_data: str, dry_run: bool, ofile_path: str) -> dict:
     my_receiver.exit_program()
     #time.sleep(1)
     
+def convert_msg(messages):
+    message_pack_dict = None
+    message_pack_list = None
+
+    if messages is not None:
+        message_pack_dict = {}
+        message_pack_list = []
+        for x in range(len(messages)):
+            print(x)
+            message_pack_dict["can_time"] = messages[x].timestamp
+            message_pack_dict["cen_id"] = messages[x].arbitration_id
+            message_pack_dict["cen_data"] = messages[x].data
+            message_pack_list.append(message_pack_dict)
+
+        return message_pack_list
+
 
 
 class CanBusListener():

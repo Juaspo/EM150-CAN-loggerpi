@@ -46,18 +46,49 @@ class EmControllerDecoder():
                         {"can_id": 0x1026102F, "can_mask":0x1FFFFFF0, "extended": True}
                         ]
         self.decoded_can_data = {}
+        self.decoded_can_data2 = {}
         self.msg = None
 
 
+    def decode_list(self, can_msg_list, print_msg=True):
+        if can_msg_list is None:
+            return None
+
+        arb_id = None
+        can_data = None
+        can_decoded_data = None
+
+        for msg in can_msg_list:
+
+            arb_id = msg.arbitration_id
+            can_data = msg.data
+
+            #print(hex(msg.arbitration_id))
+            #arb_id = msg.get(arbitration_id, None)
+            #can_data = msg.get(data, None)
+            if arb_id is not None:
+                can_decoded_data = self.id_match(arb_id, can_data)
+                
+
+                self.print_decoded_can(can_decoded_data)
+
+
+
+    def id_match(self, x, data, timestamp=None):
+        return {
+                0x10261022: self.decode_id22(data),
+                0x10261023: self.decode_id23(data)
+                }.get(x, None)
+
 
     def decode_id22(self, msg_data, **kwargs):
-        print(msg_data)
         #msg = kwargs.get("can_message", None)
-        msg = msg_data
-        msgdata = msg_data.get("data", None)
+        #msg = msg_data
+        #msgdata = msg_data.get("data", None)
+        msgdata = msg_data
 
 
-        if msg is None:
+        if msgdata is None:
             print("no CAN message passed")
             return
 
@@ -67,8 +98,9 @@ class EmControllerDecoder():
         print("\n########## First part of CAN message ##########")
 
         # byte0: error list
-        
-        self.decoded_can_data["error1"] = self.check_errors1(errors)
+        decoded_can_data = None
+
+        self.decoded_can_data["error1"] = self.check_errors1(msgdata[0])
 
         # byte1: mark state and gear
         byte_split = self.split_bytes(msgdata[1])
@@ -97,16 +129,19 @@ class EmControllerDecoder():
 
 
     def decode_id23(self, msg_data):
-        msgdata = msg_data.get("data", None)
-        msg_id = msg_data.get("arb_id", None)
-        self.decoded_can_data["arb_id"] = msg_id
-        self.decoded_can_data["ctrl_temp"] = msgdata[0]
-        self.decoded_can_data["motor_temp"] = msgdata[1]
-        self.decoded_can_data["motor_position"] = self.motor_position(msgdata[3])
-        self.decoded_can_data["throttle"] = msgdata[4]
-        self.decoded_can_data["errors2"] = self.check_errors2(msgdata[6])
+        self.decoded_can_data2 = {}
 
-        return self.decoded_can_data
+        #msgdata = msg_data.get("data", None)
+        #msg_id = msg_data.get("arb_id", None)
+        msgdata = msg_data
+        self.decoded_can_data2["arb_id"] = 0x10261023
+        self.decoded_can_data2["ctrl_temp"] = msgdata[0]
+        self.decoded_can_data2["motor_temp"] = msgdata[1]
+        self.decoded_can_data2["motor_position"] = self.motor_position(msgdata[3])
+        self.decoded_can_data2["throttle"] = msgdata[4]
+        self.decoded_can_data2["errors2"] = self.check_errors2(msgdata[6])
+
+        return self.decoded_can_data2
 
 
     def split_bytes(self, byte_value):
@@ -174,12 +209,33 @@ class EmControllerDecoder():
         if msg_data: print("data:", msg_data)
 
 
-    def print_results(self, decoded_results):
+    def print_encoded_can(self, decoded_results):
         tabulate = PrettyTable(["Key", "Value"])
         for key, value in decoded_results.items():
             tabulate.add_row([key, value])
 
         print(tabulate)
+
+
+    def print_decoded_can(self, decoded_results):
+
+        if decoded_results is None:
+            return print("no data")
+
+        tabulate = PrettyTable([
+                                "Error1", "Mark", "State", "Gear", "RPM",
+                                "Battery voltage", "Battery current"
+                                ])
+        
+        print("print dec:", decoded_results)
+        for key, value in decoded_results.items():
+            try:
+                print("KEY:", key)
+            except ValueError as e:
+                print("Cant prnt key")
+            #tabulate.add_row([key, value])
+
+        #print(tabulate)
 
 
     ############### 1022 decode
@@ -193,7 +249,8 @@ class EmControllerDecoder():
                         ]
 
         # Todo add fail detection by anding 0xC0 instead and handle any errors
-        errors_byte = errors_byte & 0xC0
+        print("Byte content", errors_byte)
+        errors_byte = errors_byte & 0x3F
         if errors_byte & 0xC0:
             print("Error! invalid data received")
             return ["invalid input", errors_byte]
@@ -211,10 +268,13 @@ class EmControllerDecoder():
         checks marks triggered from a byte and returns a list
         of triggered marks
         '''
+        mark_list = None
+        marks_triggered = None
+
         if mark_byte:
             mark_list = []
 
-            marks_triggered = marks_triggered & 0x0F #only use the lowest bits
+            mark_byte = mark_byte & 0x0F #only use the lowest bits
             marks_triggered = self.check_bits(mark_byte)
             mark_codes =    [
                             "lock moto", "brake", "cruise", "side brake"
@@ -270,7 +330,7 @@ class EmControllerDecoder():
                     "Controller overtemp", "Motor overtemp"
                     ]
 
-            errors_list = errors_list & 0x1F # only use 5 first bits
+            error2_byte = error2_byte & 0x1F # only use 5 first bits
             errors_list = self.check_bits(error2_byte)
             
             for x in errors_list:
