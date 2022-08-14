@@ -7,6 +7,7 @@ from datetime import datetime
 from prettytable import PrettyTable
 
 import em150candecoder
+import canprint
 
 g_TEST_PAYLOAD1 = {"arbitration_id": 0x10261022, "data": [0x01, 0xe9, 0x29, 0x09, 0x52, 0x03, 0xe8, 0x03]}
 g_TEST_PAYLOAD2 = {"arbitration_id": 0x10261023, "data": [0x1c, 0x23, 0x00, 0x02, 0x32, 0x00, 0x14, 0x00]}
@@ -25,6 +26,7 @@ def main(arb_id: str, can_data: str, dry_run: bool, ofile_path: str) -> dict:
     my_receiver.simple_listener()
 
     my_decoder = em150candecoder.EmControllerDecoder()
+    my_can_print = canprint.PrintCanMessage()
 
     encoded_messages = None
 
@@ -33,9 +35,9 @@ def main(arb_id: str, can_data: str, dry_run: bool, ofile_path: str) -> dict:
         user_input = input("Press enter to quit\n")  # Run until someone presses enter
         if user_input == "r":
             encoded_messages = my_receiver.get_buffered_messages()
-
-            message_list = convert_msg(encoded_messages)
-            my_decoder.decode_list(encoded_messages)
+            decoded_messages = my_decoder.decode_list(encoded_messages)
+            print(decoded_messages)
+            my_can_print.print_decoded_can(decoded_messages)
 
         elif user_input == "e":
             my_receiver.exit_program()
@@ -45,8 +47,12 @@ def main(arb_id: str, can_data: str, dry_run: bool, ofile_path: str) -> dict:
     my_receiver.stop_listener()
     my_receiver.exit_program()
     #time.sleep(1)
+
+'''
+# TODO: this function is not needed and should be removed
     
 def convert_msg(messages):
+
     message_pack_dict = None
     message_pack_list = None
 
@@ -61,7 +67,7 @@ def convert_msg(messages):
             message_pack_list.append(message_pack_dict)
 
         return message_pack_list
-
+'''
 
 
 class CanBusListener():

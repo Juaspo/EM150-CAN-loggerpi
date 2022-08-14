@@ -5,18 +5,12 @@ import click
 import time
 from datetime import datetime
 from prettytable import PrettyTable
+from collections import defaultdict
 
 g_TEST_PAYLOAD1 = {"arbitration_id": 0x10261022, "data": [0x01, 0xe9, 0x29, 0x09, 0x52, 0x03, 0xe8, 0x03]}
 g_TEST_PAYLOAD2 = {"arbitration_id": 0x10261023, "data": [0x1c, 0x23, 0x00, 0x02, 0x32, 0x00, 0x14, 0x00]}
 
 @click.command()
-#@click.option('-c', '--cfg_file', 'cfg_file', default='can_config.yml',
-#              help='path to config file to use. Default is can_config.yml')
-#@click.option('-l', '--logging_level', 'logging_level', default='DEBUG',
-#              help='''set logging severity DEBUG INFO WARNING ERROR CRITICAL
-#              Default INFO''')
-#@click.option('-L', '--logging_cfg', 'logging_config',
-#              help='''Use logging yaml file to set logging configuration''')
 @click.option('-I', '--id', 'arb_id', help='arbitration id of CAN message')
 @click.option('-D', '--data', 'can_data', help='data payload of CAN message')
 @click.option('-d', '--dry', 'dry_run', is_flag=True, default=False,
@@ -47,41 +41,53 @@ class EmControllerDecoder():
                         ]
         self.decoded_can_data = {}
         self.decoded_can_data2 = {}
+        self.id_mismatch_count = defaultdict(int)
+        self.run_errors = {"id_match": self.id_mismatch_count}
         self.msg = None
+        self.message_states = {"ignore": 0, "first msg": 1, "second msg": 2}
+        self.message_order = self.message_states.get("ignore")
 
 
     def decode_list(self, can_msg_list, print_msg=True):
+        decoded_list = []
         if can_msg_list is None:
             return None
 
         arb_id = None
         can_data = None
-        can_decoded_data = None
+        can_timestamp = None
 
         for msg in can_msg_list:
-
+            can_decoded_data = None
+            can_timestamp = msg.timestamp
             arb_id = msg.arbitration_id
             can_data = msg.data
 
-            #print(hex(msg.arbitration_id))
-            #arb_id = msg.get(arbitration_id, None)
-            #can_data = msg.get(data, None)
             if arb_id is not None:
-                can_decoded_data = self.id_match(arb_id, can_data)
-                
+                can_decoded_data = self.id_match(arb_id, can_data, can_timestamp)
+                if can_decoded_data is None:
+                #if isinstance(can_decoded_data, type(None)):
+                #if callable(can_decoded_data):
+                    self.run_errors["id_match"][arb_id] += 1
+                    continue
+                decoded_list.append(can_decoded_data(can_data, arb_id, can_timestamp))
 
-                self.print_decoded_can(can_decoded_data)
+        print("error:", self.run_errors)
+        return decoded_list
 
 
-
-    def id_match(self, x, data, timestamp=None):
+    def id_match(self, arb_id, data, timestamp=None):
+        '''
+        Fetch and return appropriate function based on arbitration id
+        '''
+        print("in id match:", hex(arb_id))
         return {
-                0x10261022: self.decode_id22(data),
-                0x10261023: self.decode_id23(data)
-                }.get(x, None)
+                0x10261022: self.decode_id22,
+                0x10261023: self.decode_id23
+                }.get(arb_id, None)
 
 
-    def decode_id22(self, msg_data, **kwargs):
+    def decode_id22(self, msg_data, arb_id="id22", timestamp=None, **kwargs):
         #msg = kwargs.get("can_message", None)
         #msg = msg_data
         #msgdata = msg_data.get("data", None)
@@ -98,55 +104,61 @@ class EmControllerDecoder():
         print("\n########## First part of CAN message ##########")
 
         # byte0: error list
-        decoded_can_data = None
+        self.decoded_can_data.clear()
+        self.decoded_can_data["part1"] = {}
 
-        self.decoded_can_data["error1"] = self.check_errors1(msgdata[0])
+        self.decoded_can_data["part1"]["arb_id"] = arb_id
+        self.decoded_can_data["part1"]["time_stamp"] = self.time_function(timestamp)
+        self.decoded_can_data["part1"]["error1"] = self.check_errors1(msgdata[0])
 
         # byte1: mark state and gear
         byte_split = self.split_bytes(msgdata[1])
         marks = self.check_marks(byte_split["l_byte"])
-        self.decoded_can_data["mark"] = marks
+        self.decoded_can_data["part1"]["mark"] = marks
         state_gear = self.state_n_gear(byte_split["h_byte"])
-        self.decoded_can_data["state"] = state_gear[0]
-        self.decoded_can_data["gear"] = state_gear[1]
+        self.decoded_can_data["part1"]["state"] = state_gear[0]
+        self.decoded_can_data["part1"]["gear"] = state_gear[1]
 
         #byte2,3 RPM
         rpm_value = self.assemble_bytes(low_byte=msgdata[2], high_byte=msgdata[3])
-        self.decoded_can_data["rpm"] = rpm_value
+        self.decoded_can_data["part1"]["rpm"] = rpm_value
         #print("RPM:", rpm_value)
 
         #byte4,5 Battery voltage
         battery_voltage = self.assemble_bytes(low_byte=msgdata[4], high_byte=msgdata[5], divide=10)
-        self.decoded_can_data["bat_voltage"] = battery_voltage
+        self.decoded_can_data["part1"]["battery_voltage"] = battery_voltage
         #print("Battery voltage:", battery_voltage)
         
         #byte6,7 Battery current
         battery_current = self.assemble_bytes(low_byte=msgdata[6], high_byte=msgdata[7], divide=10)
-        self.decoded_can_data["bat_current"] = battery_current
+        self.decoded_can_data["part1"]["battery_current"] = battery_current
         #print("Battery current:", battery_current)
         
+        print("dict clear test", self.decoded_can_data)
         return self.decoded_can_data
 
 
-    def decode_id23(self, msg_data):
-        self.decoded_can_data2 = {}
-
-        #msgdata = msg_data.get("data", None)
-        #msg_id = msg_data.get("arb_id", None)
+    def decode_id23(self, msg_data, arb_id="id23", timestamp=None):
+        print("\n########## Second part of CAN message ##########")
         msgdata = msg_data
-        self.decoded_can_data2["arb_id"] = 0x10261023
-        self.decoded_can_data2["ctrl_temp"] = msgdata[0]
-        self.decoded_can_data2["motor_temp"] = msgdata[1]
-        self.decoded_can_data2["motor_position"] = self.motor_position(msgdata[3])
-        self.decoded_can_data2["throttle"] = msgdata[4]
-        self.decoded_can_data2["errors2"] = self.check_errors2(msgdata[6])
 
-        return self.decoded_can_data2
+        self.decoded_can_data2 = {}
+        self.decoded_can_data["part2"] = {}
+        self.decoded_can_data["part2"]["arb_id"] = arb_id
+        self.decoded_can_data["part2"]["time_stamp"] = self.time_function(timestamp)
+        self.decoded_can_data["part2"]["arb_id"] = 0x10261023
+        self.decoded_can_data["part2"]["ctrl_temp"] = msgdata[0]
+        self.decoded_can_data["part2"]["motor_temp"] = msgdata[1]
+        self.decoded_can_data["part2"]["motor_position"] = self.motor_position(msgdata[3])
+        self.decoded_can_data["part2"]["throttle"] = msgdata[4]
+        self.decoded_can_data["part2"]["errors2"] = self.check_errors2(msgdata[6])
+
+        return self.decoded_can_data
 
 
     def split_bytes(self, byte_value):
         '''
-        Splits a byte inte its higer and lower part
+        Splits a byte into its higer and lower part
         0x2A -> [2, A]
         '''
 
@@ -193,49 +205,6 @@ class EmControllerDecoder():
         my_time = date_time.strftime("%H:%M:%S.%f")
         print("RPi time:", my_time)
         return {"date": my_date, "time": my_time}
-
-    def print_hex(self, msg):
-        #Todo add info
-        print("in a for loop")
-        msg_data=""
-        try:
-            for x in range(msg):
-                #print(binascii.hexlify(bytearray(msgdata[x])).decode('ascii'))
-                #print("0", byte_data, sep='x', end=' ', flush=True)
-                msg_data +="%0.2X" % msgdata[x] + ' '
-        except IndexError as e:
-            print("index error, out of bound:", e)
-
-        if msg_data: print("data:", msg_data)
-
-
-    def print_encoded_can(self, decoded_results):
-        tabulate = PrettyTable(["Key", "Value"])
-        for key, value in decoded_results.items():
-            tabulate.add_row([key, value])
-
-        print(tabulate)
-
-
-    def print_decoded_can(self, decoded_results):
-
-        if decoded_results is None:
-            return print("no data")
-
-        tabulate = PrettyTable([
-                                "Error1", "Mark", "State", "Gear", "RPM",
-                                "Battery voltage", "Battery current"
-                                ])
-        
-        print("print dec:", decoded_results)
-        for key, value in decoded_results.items():
-            try:
-                print("KEY:", key)
-            except ValueError as e:
-                print("Cant prnt key")
-            #tabulate.add_row([key, value])
-
-        #print(tabulate)
 
 
     ############### 1022 decode
