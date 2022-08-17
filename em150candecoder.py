@@ -32,20 +32,25 @@ def main(arb_id: str, can_data: str, dry_run: bool, ofile_path: str) -> dict:
 
 class EmControllerDecoder():
     def __init__(self, *args, **kwargs):
-        self.can_ids =   {
-                    "EM_CAN_ID1": 0x10261022,
-                    "EM_CAN_ID2": 0x10261023
-        }
+        self.can_ids = {
+                        "EM_CAN_ID1": 0x10261022,
+                        "EM_CAN_ID2": 0x10261023
+                        }
         self.can_id_filter = [
                         {"can_id": 0x1026102F, "can_mask":0x1FFFFFF0, "extended": True}
                         ]
         self.decoded_can_data = {}
-        self.decoded_can_data2 = {}
-        self.id_mismatch_count = defaultdict(int)
-        self.run_errors = {"id_match": self.id_mismatch_count}
-        self.msg = None
+        self.file_timestamp = None
+        #self.id_mismatch_count = defaultdict(int)
+        self.run_errors = {"id_match": defaultdict(int)}
         self.message_states = {"ignore": 0, "first msg": 1, "second msg": 2}
         self.message_order = self.message_states.get("ignore")
+        self.msg_count_dict = {
+                                "total_msg": 0, "part1_msg": 0, "part2_msg": 0, 
+                                "display_msg": 0, "other_msg": 0
+                                }
+        self.meta_data = {}
+        self.msg_pack = {"meta_data": {}, "data": []}
 
 
     def decode_list(self, can_msg_list, print_msg=True):
@@ -57,6 +62,8 @@ class EmControllerDecoder():
         can_data = None
         can_timestamp = None
 
+        self.msg_pack["meta_data"]["file_timestamp"] = self.get_time(file_time=True)
+
         for msg in can_msg_list:
             can_decoded_data = None
             can_timestamp = msg.timestamp
@@ -64,95 +71,105 @@ class EmControllerDecoder():
             can_data = msg.data
 
             if arb_id is not None:
-                can_decoded_data = self.id_match(arb_id, can_data, can_timestamp)
+                self.msg_count_dict["total_msg"] += 1
+                can_decoded_data = self.id_match(arb_id)
                 if can_decoded_data is None:
                 #if isinstance(can_decoded_data, type(None)):
                 #if callable(can_decoded_data):
+                    self.msg_count_dict["other_msg"] += 1
                     self.run_errors["id_match"][arb_id] += 1
                     continue
-                decoded_list.append(can_decoded_data(can_data, arb_id, can_timestamp))
+                decoded_list.append(can_decoded_data(can_data, arb_id, can_timestamp, True))
 
+        self.msg_pack["data"] = decoded_list
+        self.msg_pack["meta_data"].update(self.msg_count_dict)
         print("error:", self.run_errors)
-        return decoded_list
+        return self.msg_pack
 
 
-    def id_match(self, arb_id, data, timestamp=None):
+    def sync_data(self, data_dict):
+        pass
+
+
+    def id_match(self, arb_id):
         '''
         Fetch and return appropriate function based on arbitration id
         '''
-        print("in id match:", hex(arb_id))
+
         return {
+                0x1026105A: self.decade_id5A,
                 0x10261022: self.decode_id22,
                 0x10261023: self.decode_id23
                 }.get(arb_id, None)
 
 
-    def decode_id22(self, msg_data, arb_id="id22", timestamp=None, **kwargs):
-        #msg = kwargs.get("can_message", None)
-        #msg = msg_data
-        #msgdata = msg_data.get("data", None)
-        msgdata = msg_data
+    def decade_id5A(self, msg_data, arb_id="id5A", timestamp=None, hit=False):
+        if  hit:
+            self.msg_count_dict["display_msg"] += 1
+
+
+    def decode_id22(self, msgdata, arb_id="id22", timestamp=None, hit=False, **kwargs):
+        if hit:
+            self.msg_count_dict["part1_msg"] += 1
 
 
         if msgdata is None:
             print("no CAN message passed")
             return
 
-        #can_id = msg.arbitration_id
-        #can_data = msg.data
-
         print("\n########## First part of CAN message ##########")
 
         # byte0: error list
         self.decoded_can_data.clear()
-        self.decoded_can_data["part1"] = {}
+        can_dict = {}
 
-        self.decoded_can_data["part1"]["arb_id"] = arb_id
-        self.decoded_can_data["part1"]["time_stamp"] = self.time_function(timestamp)
-        self.decoded_can_data["part1"]["error1"] = self.check_errors1(msgdata[0])
+        can_dict["arb_id"] = arb_id
+        can_dict["time_stamp"] = self.get_time(timestamp)
+        can_dict["error1"] = self.check_errors1(msgdata[0])
 
         # byte1: mark state and gear
         byte_split = self.split_bytes(msgdata[1])
         marks = self.check_marks(byte_split["l_byte"])
-        self.decoded_can_data["part1"]["mark"] = marks
+        can_dict["mark"] = marks
         state_gear = self.state_n_gear(byte_split["h_byte"])
-        self.decoded_can_data["part1"]["state"] = state_gear[0]
-        self.decoded_can_data["part1"]["gear"] = state_gear[1]
+        can_dict["state"] = state_gear[0]
+        can_dict["gear"] = state_gear[1]
 
         #byte2,3 RPM
         rpm_value = self.assemble_bytes(low_byte=msgdata[2], high_byte=msgdata[3])
-        self.decoded_can_data["part1"]["rpm"] = rpm_value
-        #print("RPM:", rpm_value)
+        can_dict["rpm"] = rpm_value
 
         #byte4,5 Battery voltage
         battery_voltage = self.assemble_bytes(low_byte=msgdata[4], high_byte=msgdata[5], divide=10)
-        self.decoded_can_data["part1"]["battery_voltage"] = battery_voltage
-        #print("Battery voltage:", battery_voltage)
+        can_dict["battery_voltage"] = battery_voltage
         
         #byte6,7 Battery current
         battery_current = self.assemble_bytes(low_byte=msgdata[6], high_byte=msgdata[7], divide=10)
-        self.decoded_can_data["part1"]["battery_current"] = battery_current
-        #print("Battery current:", battery_current)
+        can_dict["battery_current"] = battery_current
         
-        print("dict clear test", self.decoded_can_data)
+        self.decoded_can_data["part1"] = can_dict
         return self.decoded_can_data
 
 
-    def decode_id23(self, msg_data, arb_id="id23", timestamp=None):
+    def decode_id23(self, msg_data, arb_id="id23", timestamp=None, hit=False):
+
+        if hit:
+            self.msg_count_dict["part2_msg"] += 1
+
         print("\n########## Second part of CAN message ##########")
         msgdata = msg_data
 
-        self.decoded_can_data2 = {}
-        self.decoded_can_data["part2"] = {}
-        self.decoded_can_data["part2"]["arb_id"] = arb_id
-        self.decoded_can_data["part2"]["time_stamp"] = self.time_function(timestamp)
-        self.decoded_can_data["part2"]["arb_id"] = 0x10261023
-        self.decoded_can_data["part2"]["ctrl_temp"] = msgdata[0]
-        self.decoded_can_data["part2"]["motor_temp"] = msgdata[1]
-        self.decoded_can_data["part2"]["motor_position"] = self.motor_position(msgdata[3])
-        self.decoded_can_data["part2"]["throttle"] = msgdata[4]
-        self.decoded_can_data["part2"]["errors2"] = self.check_errors2(msgdata[6])
-
+        can_dict = {}
+        can_dict["arb_id"] = arb_id
+        can_dict.update(self.get_time(timestamp))
+        can_dict["arb_id"] = 0x10261023
+        can_dict["ctrl_temp"] = msgdata[0]
+        can_dict["motor_temp"] = msgdata[1]
+        can_dict["motor_position"] = self.motor_position(msgdata[3])
+        can_dict["throttle"] = msgdata[4]
+        can_dict["errors2"] = self.check_errors2(msgdata[6])
+        
+        self.decoded_can_data["part2"] = can_dict
         return self.decoded_can_data
 
 
@@ -193,17 +210,18 @@ class EmControllerDecoder():
         return (high_byte<<8) + low_byte
 
 
-    def time_function(self, timestamp = None):
+    def get_time(self, timestamp = None, file_time = False):
         #Todo add info
         if timestamp is not None:
-            return {"datetime": datetime.fromtimestamp(timestamp)}
-            #Todo: revise if time function is still needed and if datetime should be split
+            date_time = datetime.fromtimestamp(timestamp)
+        else:
+            date_time = datetime.now()
 
-        date_time = datetime.now()
+        if file_time:
+            return date_time.strftime("%y%m%d_%H%M%S")
+
         my_date = date_time.strftime("%Y-%m-%d")
-        print("RPi date:", my_date)
         my_time = date_time.strftime("%H:%M:%S.%f")
-        print("RPi time:", my_time)
         return {"date": my_date, "time": my_time}
 
 

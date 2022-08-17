@@ -14,7 +14,7 @@ g_TEST_PAYLOAD2 = {"arbitration_id": 0x10261023, "data": [0x1c, 0x23, 0x00, 0x02
 @click.option('-D', '--data', 'can_data', help='data payload of CAN message')
 @click.option('-d', '--dry', 'dry_run', is_flag=True, default=False,
               help='input .dbc file for encoding')
-@click.option('-o', '--output', 'ofile_path',
+@click.option('-o', '--output', 'ofile_path', default=None,
               help='set generated file destination. Default ./')
 
 
@@ -76,10 +76,8 @@ class PrintCanMessage():
             return print("no data")
 
 
-
-        
         print("print dec:", decoded_results)
-        for entry in decoded_results
+        for entry in decoded_results:
             for key, value in entry.items():
                 try:
                     if entry.get("part1", None) and entry.get("part2", None):
@@ -95,9 +93,26 @@ class PrintCanMessage():
                     value_row.append(value)
                 except ValueError as e:
                     print("Cant prnt key")
-            
+
         print(value_row)
         tabulate.add_row(value_row)
 
         #print(tabulate)
 
+
+class WriteCanMessage():
+    def __init__(self, *args, **kwargs):
+        pass
+
+    def write_file(self, can_msg, output_file_path, filename):
+        if output_file_path is None:
+            output_file_path = "./can_logs/"
+
+    #try:
+        output_file_path = os.path.join(output_file_path, filename + '.' + "log")
+        os.makedirs(os.path.dirname(output_file_path), exist_ok = True)
+        print("File written to file path:", output_file_path)
+
+        f = open(output_file_path, 'w')
+        f.write(str(can_msg))
+        f.close()

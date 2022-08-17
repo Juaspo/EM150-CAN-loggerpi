@@ -112,20 +112,25 @@ class PeriodicSend():
         self.msg1_id = 0x10261022
         self.msg2_id = 0x10261023
         self.msgd_id = 0x1026105A
+        self.msgx_id = 0x12345678
         self.msg1_payload = [0x01, 0xe9, 0x29, 0x09, 0x52, 0x03, 0xe8, 0x03]
         self.msg2_payload = [0x1c, 0x23, 0x00, 0x02, 0x32, 0x00, 0x14, 0x00]
         self.msgd_payload = [0x01, 0x00, 0x00, 0x07, 0x00, 0x00, 0x00, 0x00]
+        self.msgx_payload = [0x01, 0x02, 0x03, 0x04, 0xa0, 0xb0, 0xc0, 0xd0]
 
-        self.can = None
+        self.taskd = None
         self.task = None
         self.task2 = None
+        self.taskx = None
 
         self.msg1 = None
         self.msg2 = None
         self.msgd = None
+        self.msgx = None
 
         self.active_broadcast = False
         self.display_broadcast = False
+        self.random_broadcast = False
 
         self.can_send_setup()
 
@@ -138,7 +143,35 @@ class PeriodicSend():
         self.msg1 = can.Message(arbitration_id=self.msg1_id, data=self.msg1_payload, is_extended_id=True)    
         self.msg2 = can.Message(arbitration_id=self.msg2_id, data=self.msg2_payload, is_extended_id=True)
         self.msgd = can.Message(arbitration_id=self.msgd_id, data=self.msgd_payload, is_extended_id=True)
+        self.msgx = can.Message(arbitration_id=self.msgx_id, data=self.msgx_payload, is_extended_id=True)
         print("ip link and intercafe setup done")
+
+
+    def toggle_random(self):
+        if self.random_broadcast:
+            self.stop_random_send()
+        else:
+            self.start_random_send()
+
+    
+    def stop_random_send(self):
+        self.taskx.stop()
+        print("Stopped random CAN send")
+        self.random_broadcast = False
+        return self.random_broadcast
+
+
+    def start_random_send(self, period=1):
+        self.taskx = self.can0.send_periodic(self.msgx, period)
+        if not isinstance(self.taskx, can.ModifiableCyclicTaskABC):
+            print("This interface does not seem to support mods")
+            self.taskx.stop()
+            self.random_broadcast = False
+            return
+
+        self.random_broadcast = True
+        print("random broadcast started")
+        return self.random_broadcast
 
 
     def toggle_display(self):
@@ -230,6 +263,8 @@ while user_input != "":
         periodic_send.toggle_broadcast()
     elif user_input == "d":
         periodic_send.toggle_display()
+    elif user_input == "x":
+        periodic_send.toggle_random()
     else:
         print("no code yet")
 

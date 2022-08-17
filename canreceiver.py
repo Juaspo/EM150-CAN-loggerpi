@@ -27,6 +27,7 @@ def main(arb_id: str, can_data: str, dry_run: bool, ofile_path: str) -> dict:
 
     my_decoder = em150candecoder.EmControllerDecoder()
     my_can_print = canprint.PrintCanMessage()
+    my_can_write = canprint.WriteCanMessage()
 
     encoded_messages = None
 
@@ -36,8 +37,11 @@ def main(arb_id: str, can_data: str, dry_run: bool, ofile_path: str) -> dict:
         if user_input == "r":
             encoded_messages = my_receiver.get_buffered_messages()
             decoded_messages = my_decoder.decode_list(encoded_messages)
-            print(decoded_messages)
-            my_can_print.print_decoded_can(decoded_messages)
+            print("Decoded messages:", decoded_messages)
+            #my_can_print.print_decoded_can(decoded_messages)
+
+            filename = decoded_messages["meta_data"]["file_timestamp"]
+            my_can_write.write_file(decoded_messages, None, filename)
 
         elif user_input == "e":
             my_receiver.exit_program()
