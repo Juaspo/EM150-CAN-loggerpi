@@ -3,6 +3,7 @@ import can
 import binascii
 import click
 import time
+import re
 from datetime import datetime
 from prettytable import PrettyTable
 from collections import defaultdict
@@ -14,7 +15,9 @@ g_TEST_PAYLOAD2 = {"arbitration_id": 0x10261023, "data": [0x1c, 0x23, 0x00, 0x02
 @click.option('-I', '--id', 'arb_id', help='arbitration id of CAN message')
 @click.option('-D', '--data', 'can_data', help='data payload of CAN message')
 @click.option('-d', '--dry', 'dry_run', is_flag=True, default=False,
-              help='input .dbc file for encoding')
+              help='test function of decoder without providing CAN data')
+@click.option('-i', '--input', 'ifile_path',
+              help='input CAN log file for decoding')
 @click.option('-o', '--output', 'ofile_path',
               help='set generated file destination. Default ./')
 
@@ -28,6 +31,21 @@ def main(arb_id: str, can_data: str, dry_run: bool, ofile_path: str) -> dict:
         result = ecd.decode_id22(g_TEST_PAYLOAD1)
         result = ecd.decode_id23(g_TEST_PAYLOAD2)
         ecd.print_results(result)
+
+
+class CanStates():
+    def __init__(self, *args, **kwargs):
+        self.current_state = 0
+        self.states = {"off":0, "part1":1, "part2":2}
+
+    def reset_state(self):
+        self.current_state = 0
+    def part1(self):
+        self.current_state = 1
+    def part2(self):
+        self.current_state = 2
+    def get_state(self):
+        return self.current_state
 
 
 class EmControllerDecoder():
@@ -46,11 +64,120 @@ class EmControllerDecoder():
         self.message_states = {"ignore": 0, "first msg": 1, "second msg": 2}
         self.message_order = self.message_states.get("ignore")
         self.msg_count_dict = {
-                                "total_msg": 0, "part1_msg": 0, "part2_msg": 0, 
-                                "display_msg": 0, "other_msg": 0
+                                "total": 0, "ctrl1": 0, "ctrl2": 0, 
+                                "display": 0, "other": 0
                                 }
         self.meta_data = {}
         self.msg_pack = {"meta_data": {}, "data": []}
+
+        self.can_state = CanStates()
+        self.combine_part1 = {}
+        self.combine_part2 = {}
+        self.combined_can = []
+
+
+    def new_session(self):
+        self.clear_counters()
+        self.set_filename_timestamp()
+        return self.get_filename_timestamp()
+
+
+    def set_filename_timestamp(self):
+        self.msg_pack["meta_data"]["file_timestamp"] = self.get_time(file_time=True)
+
+
+    def get_filename_timestamp(self):
+        return self.msg_pack["meta_data"].get("file_timestamp", None)
+
+
+    def get_counters(self):
+        return self.msg_count_dict
+
+
+    def clear_counters(self, counter=["total", "ctrl1", "ctrl2", "display", "other"]):
+        for cntr in counter:
+            self.msg_count_dict[cntr] = 0
+
+        #print("counters clear:", self.msg_count_dict)
+
+
+    def combine_decode_entry(self, can_data, can_id, **kwargs):
+        timestamp = kwargs.get("timestamp", None)
+        hit = kwargs.get("hit", False)
+
+        can_decoded_data = None
+
+        if self.can_state.get_state == self.can_state.states.get("part1"):
+            if can_id == 0x10261022:
+                self.msg_count_dict["total"] += 1
+                x = self.id_match(can_id)
+                self.combine_part1 = x(can_data, can_id, timestamp, hit)
+                del combine_part1['arb_id']
+                self.can_state.part2()
+            elif can_id == 0x10261023:
+                self.combine_part1 = {"error1":'-'}
+
+        if can_decoded_data is None:
+            self.msg_count_dict["other"] += 1
+            self.run_errors["id_match"][can_id] += 1
+            return None
+
+        return can_decoded_data(can_data, can_id, timestamp, hit)
+
+
+    def decode_entry(self, can_data, can_id, **kwargs):
+        timestamp = kwargs.get("timestamp", None)
+        hit = kwargs.get("hit", False)
+
+        can_decoded_data = None
+
+        self.msg_count_dict["total"] += 1
+        can_decoded_data = self.id_match(can_id)
+        
+        if can_decoded_data is None:
+            self.msg_count_dict["other"] += 1
+            self.run_errors["id_match"][can_id] += 1
+            return None
+
+        return can_decoded_data(can_data, can_id, timestamp, hit)
+
+
+    def decode_file(self, file_path):
+
+        can_decoded_data = None
+        decoded_list = []
+
+        self.get_filename_timestamp()
+
+        with open(file_path) as infile:
+            for line in infile:
+                can_data = self.parse_text(line)
+                
+                if can_data is not None:
+                    x = self.decode_entry(can_data[1], can_data[0], **{'hit':True})
+                    if x is not None:
+                        decoded_list.append(x)
+
+
+        self.msg_pack["data"] = decoded_list
+        self.msg_pack["meta_data"].update(self.msg_count_dict)
+        print("error:", self.run_errors)
+        return self.msg_pack
+
+
+    def parse_text(self, line: str):
+        hex_pattern = re.compile(r"\scan?[0-9]\s+([0-9a-fA-F]+).{8}(([0-9a-fA-F]{2}\s){8})")
+        can_data = re.search(hex_pattern, line)
+        
+        if can_data:
+            can_id = int(can_data.group(1), 16)
+            data = can_data.group(2).replace(" ","")
+            can_payload = bytearray()
+            can_payload.extend(data.encode())
+            
+            return [can_id, can_payload]
+        else:
+            return None
 
 
     def decode_list(self, can_msg_list, print_msg=True):
@@ -58,28 +185,15 @@ class EmControllerDecoder():
         if can_msg_list is None:
             return None
 
-        arb_id = None
-        can_data = None
-        can_timestamp = None
-
-        self.msg_pack["meta_data"]["file_timestamp"] = self.get_time(file_time=True)
-
         for msg in can_msg_list:
-            can_decoded_data = None
-            can_timestamp = msg.timestamp
             arb_id = msg.arbitration_id
             can_data = msg.data
+            extras = {"timestamp": msg.timestamp, "hit": True}
 
             if arb_id is not None:
-                self.msg_count_dict["total_msg"] += 1
-                can_decoded_data = self.id_match(arb_id)
-                if can_decoded_data is None:
-                #if isinstance(can_decoded_data, type(None)):
-                #if callable(can_decoded_data):
-                    self.msg_count_dict["other_msg"] += 1
-                    self.run_errors["id_match"][arb_id] += 1
-                    continue
-                decoded_list.append(can_decoded_data(can_data, arb_id, can_timestamp, True))
+                x = self.decode_entry(can_data, arb_id, **extras)
+                if x is not None:
+                    decoded_list.append(x)
 
         self.msg_pack["data"] = decoded_list
         self.msg_pack["meta_data"].update(self.msg_count_dict)
@@ -105,19 +219,16 @@ class EmControllerDecoder():
 
     def decade_id5A(self, msg_data, arb_id="id5A", timestamp=None, hit=False):
         if  hit:
-            self.msg_count_dict["display_msg"] += 1
+            self.msg_count_dict["display"] += 1
 
 
-    def decode_id22(self, msgdata, arb_id="id22", timestamp=None, hit=False, **kwargs):
+    def decode_id22(self, msg_data, arb_id="id22", timestamp=None, hit=False):
         if hit:
-            self.msg_count_dict["part1_msg"] += 1
+            self.msg_count_dict["ctrl1"] += 1
 
-
-        if msgdata is None:
+        if msg_data is None:
             print("no CAN message passed")
             return
-
-        print("\n########## First part of CAN message ##########")
 
         # byte0: error list
         self.decoded_can_data.clear()
@@ -125,10 +236,10 @@ class EmControllerDecoder():
 
         can_dict["arb_id"] = arb_id
         can_dict["time_stamp"] = self.get_time(timestamp)
-        can_dict["error1"] = self.check_errors1(msgdata[0])
+        can_dict["error1"] = self.check_errors1(msg_data[0])
 
         # byte1: mark state and gear
-        byte_split = self.split_bytes(msgdata[1])
+        byte_split = self.split_bytes(msg_data[1])
         marks = self.check_marks(byte_split["l_byte"])
         can_dict["mark"] = marks
         state_gear = self.state_n_gear(byte_split["h_byte"])
@@ -136,15 +247,15 @@ class EmControllerDecoder():
         can_dict["gear"] = state_gear[1]
 
         #byte2,3 RPM
-        rpm_value = self.assemble_bytes(low_byte=msgdata[2], high_byte=msgdata[3])
+        rpm_value = self.assemble_bytes(low_byte=msg_data[2], high_byte=msg_data[3])
         can_dict["rpm"] = rpm_value
 
         #byte4,5 Battery voltage
-        battery_voltage = self.assemble_bytes(low_byte=msgdata[4], high_byte=msgdata[5], divide=10)
+        battery_voltage = self.assemble_bytes(low_byte=msg_data[4], high_byte=msg_data[5], divide=10)
         can_dict["battery_voltage"] = battery_voltage
         
         #byte6,7 Battery current
-        battery_current = self.assemble_bytes(low_byte=msgdata[6], high_byte=msgdata[7], divide=10)
+        battery_current = self.assemble_bytes(low_byte=msg_data[6], high_byte=msg_data[7], divide=10)
         can_dict["battery_current"] = battery_current
         
         self.decoded_can_data["part1"] = can_dict
@@ -154,20 +265,17 @@ class EmControllerDecoder():
     def decode_id23(self, msg_data, arb_id="id23", timestamp=None, hit=False):
 
         if hit:
-            self.msg_count_dict["part2_msg"] += 1
-
-        print("\n########## Second part of CAN message ##########")
-        msgdata = msg_data
+            self.msg_count_dict["ctrl2"] += 1
 
         can_dict = {}
         can_dict["arb_id"] = arb_id
         can_dict.update(self.get_time(timestamp))
         can_dict["arb_id"] = 0x10261023
-        can_dict["ctrl_temp"] = msgdata[0]
-        can_dict["motor_temp"] = msgdata[1]
-        can_dict["motor_position"] = self.motor_position(msgdata[3])
-        can_dict["throttle"] = msgdata[4]
-        can_dict["errors2"] = self.check_errors2(msgdata[6])
+        can_dict["ctrl_temp"] = msg_data[0]
+        can_dict["motor_temp"] = msg_data[1]
+        can_dict["motor_position"] = self.motor_position(msg_data[3])
+        can_dict["throttle"] = msg_data[4]
+        can_dict["errors2"] = self.check_errors2(msg_data[6])
         
         self.decoded_can_data["part2"] = can_dict
         return self.decoded_can_data
@@ -236,7 +344,7 @@ class EmControllerDecoder():
                         ]
 
         # Todo add fail detection by anding 0xC0 instead and handle any errors
-        print("Byte content", errors_byte)
+
         errors_byte = errors_byte & 0x3F
         if errors_byte & 0xC0:
             print("Error! invalid data received")

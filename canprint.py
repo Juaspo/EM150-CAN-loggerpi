@@ -100,13 +100,17 @@ class PrintCanMessage():
         #print(tabulate)
 
 
-class WriteCanMessage():
+class WriteLogFile():
     def __init__(self, *args, **kwargs):
         pass
 
     def write_file(self, can_msg, output_file_path, filename):
+
         if output_file_path is None:
             output_file_path = "./can_logs/"
+
+        if filename is None:
+            filename = "canlog"
 
     #try:
         output_file_path = os.path.join(output_file_path, filename + '.' + "log")
@@ -116,3 +120,4 @@ class WriteCanMessage():
         f = open(output_file_path, 'w')
         f.write(str(can_msg))
         f.close()
+
