@@ -75,13 +75,21 @@ class EmControllerDecoder():
         self.combine_part1 = {}
         self.combined_can = {}
         self.combined_can_default = {
-                            "Timestamp1":'-', "Errors":'-', "State":'-',
+                            "Date":'-', "Time":'-', "Errors":'-', "State":'-',
                             "PRND":'-', "Gear":'-', "RPM":'-', "Batt voltage":'-',
                             "Batt current":'-', "Timestamp2":'-',
                             "Controller temp":'-', "Motor temp":'-',
                             "Motor position":'-', "Throttle":'-', "Faults":'-',
                             "Fails":'-'
                             }
+
+
+    def get_csv_header(self):
+        header_list = []
+        for keys in self.combined_can_default:
+            header_list.append(keys)
+
+        return header_list
 
 
     def new_session(self):
@@ -121,6 +129,9 @@ class EmControllerDecoder():
 
         can_decoded_data = None
 
+        if can_id is not None:
+            self.msg_count_dict["total"] += 1
+
         if can_data is None:
             print("can data is None", can_id)
             self.msg_count_dict["other"] += 1
@@ -134,9 +145,8 @@ class EmControllerDecoder():
                 self.can_state.set_part1()
 
 
-        if (can_id & 0x10261022) == 0x10261022: # And operation with #22 will capture both 22 and 23
+        if can_id == 0x10261022 or can_id == 0x10261023:
             print ("processing data")
-            self.msg_count_dict["total"] += 1
             x = self.id_match(can_id)
             decoded_data = x(can_data, can_id, timestamp, hit)
             #print("decoded data:", decoded_data)
@@ -177,7 +187,6 @@ class EmControllerDecoder():
             self.msg_count_dict["other"] += 1
             print("other msg")
             return None
-
 
         return None
 
@@ -233,8 +242,11 @@ class EmControllerDecoder():
 
 
     def parse_text(self, line: str):
+        print("Show line:", line)
+
+
         #hex_pattern = re.compile(r"\scan?[0-9]\s+([0-9a-fA-F]+).{8}(([0-9a-fA-F]{2}\s){8})")
-        hex_pattern = re.compile(r"([0-9]{10}\.[0-9]{6})\s.+\s([0-9a-fA-F]{8})\s[0-9]\s((([0-9a-fA-F]{1,2})\s){8})")
+        hex_pattern = re.compile(r"([0-9]{10}\.[0-9]{6})\s.+\s([0-9a-fA-F]{8})\s[0-9]\s((([0-9a-fA-F]{1,2})\s?){8})")
         
         can_data = re.search(hex_pattern, line)
         
@@ -326,8 +338,8 @@ class EmControllerDecoder():
         can_dict = {}
 
         can_dict["Arbitration id"] = arb_id
-        #can_dict.update(self.get_time(timestamp))
-        can_dict["Timestamp1"] = self.get_time(timestamp)
+        can_dict.update(self.get_time(timestamp))
+        #can_dict["Timestamp1"] = self.get_time(timestamp)
         can_dict["Errors"] = self.check_errors1(msg_data[0])
 
         # byte1: mark state and gear

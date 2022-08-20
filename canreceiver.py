@@ -52,7 +52,7 @@ def main(arb_id: str, can_data: str, dry_run: bool, ofile_path: str) -> dict:
         elif user_input == 'f':
             filename = my_decoder.new_session()
             filename = "test"
-            decoded_messages = my_decoder.decode_file("./can_logs/190822_roam_lite.log")
+            decoded_messages = my_decoder.decode_file("./test_code/190822_roam_lite.log")
             my_can_write.write_file(decoded_messages, None, filename)
 
         elif user_input == 'c':
@@ -62,17 +62,29 @@ def main(arb_id: str, can_data: str, dry_run: bool, ofile_path: str) -> dict:
         elif user_input == 'v':
             my_decoder.new_session()
             filename = "test2"
-            ifile_path = "./can_logs/190822_roam_lite.log"
+            ifile_path = "./test_code/190822_roam_lite.log"
             print("input filepath:", ifile_path)
+
+            my_file = my_can_write.create_csv_file("./can_logs/", "can_csv")
+            my_headers = my_decoder.get_csv_header()
+            my_can_write.write_csv_row(my_file, my_headers)
 
             with open(ifile_path) as infile:
                 for line in infile:
                     can_data = my_decoder.parse_text(line)
                     decoded_messages = my_decoder.combine_decode_entry(can_data[1], can_data[0], **{'timestamp':can_data[2], 'hit':True})
                     print("result:", decoded_messages)
-                    
-                    #if can_data is not None:
 
+                    if decoded_messages is not None:
+                        my_can_write.write_csv_dict(my_file, [decoded_messages], my_headers)
+
+
+            my_counter = my_decoder.get_counters()
+            my_counter_str = my_can_write.write_dict_to_file(my_file, my_counter, "\n")
+            print(my_counter_str)
+
+            my_can_write.write_to_file(my_file, my_counter_str)
+            my_can_write.close_file(my_file)
 
 
 
