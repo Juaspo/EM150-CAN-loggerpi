@@ -50,11 +50,29 @@ def main(arb_id: str, can_data: str, dry_run: bool, ofile_path: str) -> dict:
             my_receiver.exit_program()
 
         elif user_input == 'f':
-            decoded_messages = my_decoder.decode_file("./can_logs/log1.log")
+            filename = my_decoder.new_session()
+            filename = "test"
+            decoded_messages = my_decoder.decode_file("./can_logs/190822_roam_lite.log")
+            my_can_write.write_file(decoded_messages, None, filename)
 
         elif user_input == 'c':
             my_decoder.clear_counters()
             print("Counters cleared!")
+
+        elif user_input == 'v':
+            my_decoder.new_session()
+            filename = "test2"
+            ifile_path = "./can_logs/190822_roam_lite.log"
+            print("input filepath:", ifile_path)
+
+            with open(ifile_path) as infile:
+                for line in infile:
+                    can_data = my_decoder.parse_text(line)
+                    decoded_messages = my_decoder.combine_decode_entry(can_data[1], can_data[0], **{'timestamp':can_data[2], 'hit':True})
+                    print("result:", decoded_messages)
+                    
+                    #if can_data is not None:
+
 
 
 
