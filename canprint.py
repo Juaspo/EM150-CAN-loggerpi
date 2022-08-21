@@ -145,7 +145,7 @@ class WriteLogFile():
     def write_csv_dict(self, file_object, dict_data, headers):
         writer = csv.DictWriter(file_object, fieldnames=headers)
         for data in dict_data:
-            print("data in canprint:", data)
+            #print("data in canprint:", data)
             writer.writerow(data)
 
 

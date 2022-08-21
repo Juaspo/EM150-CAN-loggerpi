@@ -61,7 +61,7 @@ class EmControllerDecoder():
         self.file_timestamp = None
         #self.id_mismatch_count = defaultdict(int)
         self.run_errors = {"id_match": defaultdict(int)}
-        self.fails = {"part miss": "-"}
+        self.fails = {"missing part": "-"}
         self.message_states = {"ignore": 0, "first msg": 1, "second msg": 2}
         self.message_order = self.message_states.get("ignore")
         self.msg_count_dict = {
@@ -79,7 +79,7 @@ class EmControllerDecoder():
                             "PRND":'-', "Gear":'-', "RPM":'-', "Batt voltage":'-',
                             "Batt current":'-', "Timestamp2":'-',
                             "Controller temp":'-', "Motor temp":'-',
-                            "Motor position":'-', "Throttle":'-', "Faults":'-',
+                            "Hall position":'-', "Throttle %":'-', "Faults":'-',
                             "Fails":'-'
                             }
 
@@ -236,6 +236,7 @@ class EmControllerDecoder():
         can_data = self.parse_text(line)
 
         if can_data is not None:
+            print("can_data file line:", can_data)
             x = self.combine_decode_entry(can_data[1], can_data[0], **{'timestamp':can_data[2], 'hit':True})
             if x is not None:
                 return x
@@ -255,30 +256,32 @@ class EmControllerDecoder():
             can_time = float(can_data.group(1))
             can_id = int(can_data.group(2), 16)
             dat = can_data.group(3)
+            dat2 = dat.strip().split(' ')
             dat = dat.strip().split(' ')
-
+            print("dat split:", dat)
 
             da = ""
             for x in dat:
                 da += "%0.2X" % int(x, 16)
 
-            #print("clean data:", da)
-            #dat = [int(x,16) for c in dat]
-            #dat = map(lambda x:int(x,16), dat)
-            #dat = ' '.join(binascii.hexify(x) for x in dat)
-            #print("after lambda:", dat)
-            #dat = list(map(int, dat))
+            da2 = []
+            for y in dat2:
+                da2.append(int(y, 16))
+
             dat = bytearray()
             dat.extend(da.encode())
+
+            z = bytearray()
+            z.extend(da2)
 
             data = can_data.group(3).replace(" ","")
             can_payload = bytearray()
             can_payload.extend(data.encode())
-            #print(dat)
-            #print("group3:", can_data.group(3))
+            print("dat:", dat)
+            print("group3:", can_data.group(3))
 
 
-            return [can_id, dat, can_time]
+            return [can_id, z, can_time]
         else:
             return None
 
@@ -340,12 +343,12 @@ class EmControllerDecoder():
         can_dict["Arbitration id"] = arb_id
         can_dict.update(self.get_time(timestamp))
         #can_dict["Timestamp1"] = self.get_time(timestamp)
+        print("error code0:", msg_data)
         can_dict["Errors"] = self.check_errors1(msg_data[0])
 
         # byte1: mark state and gear
         byte_split = self.split_bytes(msg_data[1])
-        marks = self.check_marks(byte_split["l_byte"])
-        can_dict["Mark"] = marks
+        can_dict["State"] = self.check_marks(byte_split["l_byte"])
         state_gear = self.state_n_gear(byte_split["h_byte"])
         can_dict["PRND"] = state_gear[0]
         can_dict["Gear"] = state_gear[1]
@@ -377,8 +380,8 @@ class EmControllerDecoder():
         can_dict["Timestamp2"] = self.get_time(timestamp)
         can_dict["Controller temp"] = msg_data[0]
         can_dict["Motor temp"] = msg_data[1]
-        can_dict["Motor pos"] = self.motor_position(msg_data[3])
-        can_dict["Throttle"] = msg_data[4]
+        can_dict["Hall position"] = self.motor_position(msg_data[3])
+        can_dict["Throttle %"] = msg_data[4]
         can_dict["Faults"] = self.check_errors2(msg_data[6])
         
         #self.decoded_can_data["part2"] = can_dict
@@ -450,7 +453,9 @@ class EmControllerDecoder():
 
         # Todo add fail detection by anding 0xC0 instead and handle any errors
 
+        print("error byte1:", errors_byte)
         errors_byte = errors_byte & 0x3F
+        print("error byte2:", errors_byte)
         if errors_byte & 0xC0:
             print("Error! invalid data received")
             return ["invalid input", errors_byte]
@@ -510,12 +515,17 @@ class EmControllerDecoder():
             position = ['A', 'B', 'C']
             motor_pos = ""
 
+            print("in rot", rotation_byte)
             #TODO: Add fail trigger if all three poles are triggered at the same time
             rotation_byte = rotation_byte & 0x07 # Only look at the first three bits
+            print(rotation_byte)
             hall_trigger_list = self.check_bits(rotation_byte)
+            print("hall:", hall_trigger_list)
 
             for x in hall_trigger_list:
+                    print("hall x:", x)
                     motor_pos += position[x]
+                    print(motor_pos)
             return motor_pos
 
         else:
