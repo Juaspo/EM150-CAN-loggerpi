@@ -62,10 +62,10 @@ def main(arb_id: str, can_data: str, dry_run: bool, ofile_path: str) -> dict:
         elif user_input == 'v':
             my_decoder.new_session()
             filename = "test2"
-            ifile_path = "./test_code/190822_roam_lite.log"
+            ifile_path = "./test_code/22-08-2022_14-59-16.log"
             print("input filepath:", ifile_path)
 
-            my_file = my_can_write.create_csv_file("./can_logs/", "can_csv")
+            my_file = my_can_write.create_csv_file("./can_logs/", "220822_roam")
             my_headers = my_decoder.get_csv_header()
             my_can_write.write_csv_row(my_file, my_headers)
 
@@ -73,7 +73,7 @@ def main(arb_id: str, can_data: str, dry_run: bool, ofile_path: str) -> dict:
                 for line in infile:
                     can_data = my_decoder.parse_text(line)
                     decoded_messages = my_decoder.combine_decode_entry(can_data[1], can_data[0], **{'timestamp':can_data[2], 'hit':True})
-                    print("result:", decoded_messages)
+                    #print("result:", decoded_messages)
 
                     if decoded_messages is not None:
                         my_can_write.write_csv_dict(my_file, [decoded_messages], my_headers)

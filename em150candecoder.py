@@ -61,7 +61,7 @@ class EmControllerDecoder():
         self.file_timestamp = None
         #self.id_mismatch_count = defaultdict(int)
         self.run_errors = {"id_match": defaultdict(int)}
-        self.fails = {"missing part": "-"}
+        self.fails = {"missing part":'-', "batt current":'-'}
         self.message_states = {"ignore": 0, "first msg": 1, "second msg": 2}
         self.message_order = self.message_states.get("ignore")
         self.msg_count_dict = {
@@ -156,12 +156,10 @@ class EmControllerDecoder():
                 if value is not None:
                     self.combined_can[key] = value
 
-            print("current state:", self.can_state.get_state())
+            #print("current state:", self.can_state.get_state())
             if self.can_state.get_state() == self.can_state.states.get("part1"):
-                print("in state 1")
                 if can_id == 0x10261023:
                     self.fails["part miss"] = "1"
-                    print("miss part1")
                     self.combined_can["Fails"] = self.fails
                     return self.combined_can
 
@@ -169,7 +167,6 @@ class EmControllerDecoder():
                 return None
 
             elif self.can_state.get_state() == self.can_state.states.get("part2"):
-                print("in state 2")
                 if can_id == 0x10261022:
                     self.fails["part miss"] = "2"
                     self.combined_can["Fails"] = self.fails
@@ -180,12 +177,12 @@ class EmControllerDecoder():
 
         elif can_id == 0x1026105a:
             self.msg_count_dict["display"] += 1
-            print("diaplay msg")
+            #print("diaplay msg")
             return None
 
         else:
             self.msg_count_dict["other"] += 1
-            print("other msg")
+            #print("other msg")
             return None
 
         return None
@@ -199,7 +196,7 @@ class EmControllerDecoder():
 
         self.msg_count_dict["total"] += 1
         can_decoded_data = self.id_match(can_id)
-        
+
         if can_decoded_data is None:
             self.msg_count_dict["other"] += 1
             self.run_errors["id_match"][can_id] += 1
@@ -219,7 +216,7 @@ class EmControllerDecoder():
         with open(file_path) as infile:
             for line in infile:
                 can_data = self.parse_text(line)
-                
+
                 if can_data is not None:
                     x = self.decode_entry(can_data[1], can_data[0], **{'timestamp':can_data[2], 'hit':True})
                     if x is not None:
@@ -236,14 +233,14 @@ class EmControllerDecoder():
         can_data = self.parse_text(line)
 
         if can_data is not None:
-            print("can_data file line:", can_data)
+            #print("can_data file line:", can_data)
             x = self.combine_decode_entry(can_data[1], can_data[0], **{'timestamp':can_data[2], 'hit':True})
             if x is not None:
                 return x
 
 
     def parse_text(self, line: str):
-        print("Show line:", line)
+        #print("Show line:", line)
 
 
         #hex_pattern = re.compile(r"\scan?[0-9]\s+([0-9a-fA-F]+).{8}(([0-9a-fA-F]{2}\s){8})")
@@ -258,7 +255,7 @@ class EmControllerDecoder():
             dat = can_data.group(3)
             dat2 = dat.strip().split(' ')
             dat = dat.strip().split(' ')
-            print("dat split:", dat)
+            #print("dat split:", dat)
 
             da = ""
             for x in dat:
@@ -277,8 +274,8 @@ class EmControllerDecoder():
             data = can_data.group(3).replace(" ","")
             can_payload = bytearray()
             can_payload.extend(data.encode())
-            print("dat:", dat)
-            print("group3:", can_data.group(3))
+            #print("dat:", dat)
+            #print("group3:", can_data.group(3))
 
 
             return [can_id, z, can_time]
@@ -303,7 +300,7 @@ class EmControllerDecoder():
 
         self.msg_pack["data"] = decoded_list
         self.msg_pack["meta_data"].update(self.msg_count_dict)
-        print("error:", self.run_errors)
+        #print("error:", self.run_errors)
         return self.msg_pack
 
 
@@ -343,13 +340,12 @@ class EmControllerDecoder():
         can_dict["Arbitration id"] = arb_id
         can_dict.update(self.get_time(timestamp))
         #can_dict["Timestamp1"] = self.get_time(timestamp)
-        print("error code0:", msg_data)
         can_dict["Errors"] = self.check_errors1(msg_data[0])
 
         # byte1: mark state and gear
         byte_split = self.split_bytes(msg_data[1])
         can_dict["State"] = self.check_marks(byte_split["l_byte"])
-        state_gear = self.state_n_gear(byte_split["h_byte"])
+        state_gear = self.prnd_n_gear(byte_split["h_byte"])
         can_dict["PRND"] = state_gear[0]
         can_dict["Gear"] = state_gear[1]
 
@@ -363,6 +359,9 @@ class EmControllerDecoder():
         
         #byte6,7 Battery current
         battery_current = self.assemble_bytes(low_byte=msg_data[6], high_byte=msg_data[7], divide=10)
+        if battery_current == 0xFF: 
+            battery_current = 0
+
         can_dict["Batt current"] = battery_current
         
         #self.decoded_can_data["part1"] = can_dict
@@ -453,9 +452,7 @@ class EmControllerDecoder():
 
         # Todo add fail detection by anding 0xC0 instead and handle any errors
 
-        print("error byte1:", errors_byte)
         errors_byte = errors_byte & 0x3F
-        print("error byte2:", errors_byte)
         if errors_byte & 0xC0:
             print("Error! invalid data received")
             return ["invalid input", errors_byte]
@@ -489,7 +486,7 @@ class EmControllerDecoder():
         return mark_list
 
 
-    def state_n_gear(self, value):
+    def prnd_n_gear(self, value):
         '''
         checks state and gear and return each
         as a char representation
@@ -515,17 +512,12 @@ class EmControllerDecoder():
             position = ['A', 'B', 'C']
             motor_pos = ""
 
-            print("in rot", rotation_byte)
             #TODO: Add fail trigger if all three poles are triggered at the same time
             rotation_byte = rotation_byte & 0x07 # Only look at the first three bits
-            print(rotation_byte)
             hall_trigger_list = self.check_bits(rotation_byte)
-            print("hall:", hall_trigger_list)
 
             for x in hall_trigger_list:
-                    print("hall x:", x)
                     motor_pos += position[x]
-                    print(motor_pos)
             return motor_pos
 
         else:
