@@ -22,8 +22,8 @@ g_TEST_PAYLOAD2 = {"arbitration_id": 0x10261023, "data": [0x1c, 0x23, 0x00, 0x02
 
 
 def main(arb_id: str, can_data: str, dry_run: bool, ofile_path: str) -> dict:
-    my_receiver = CanBusListener()
-    my_receiver.simple_listener()
+    #my_receiver = CanBusListener()
+    #my_receiver.simple_listener()
 
     my_decoder = em150candecoder.EmControllerDecoder()
     my_can_print = canprint.PrintCanMessage()
@@ -38,7 +38,7 @@ def main(arb_id: str, can_data: str, dry_run: bool, ofile_path: str) -> dict:
             filename = my_decoder.new_session()
 
             print("filename:", filename)
-            encoded_messages = my_receiver.get_buffered_messages()
+            #encoded_messages = my_receiver.get_buffered_messages()
             decoded_messages = my_decoder.decode_list(encoded_messages)
             #print("Decoded messages:", decoded_messages)
             #my_can_print.print_decoded_can(decoded_messages)
@@ -47,7 +47,8 @@ def main(arb_id: str, can_data: str, dry_run: bool, ofile_path: str) -> dict:
             my_can_write.write_file(decoded_messages, None, filename)
 
         elif user_input == "e":
-            my_receiver.exit_program()
+            #my_receiver.exit_program()
+            pass
 
         elif user_input == 'f':
             filename = my_decoder.new_session()
@@ -62,10 +63,10 @@ def main(arb_id: str, can_data: str, dry_run: bool, ofile_path: str) -> dict:
         elif user_input == 'v':
             my_decoder.new_session()
             filename = "test2"
-            ifile_path = "./test_code/22-08-2022_14-59-16.log"
+            ifile_path = "./test_code/06-09-2022_12-54-55.txt"
             print("input filepath:", ifile_path)
 
-            my_file = my_can_write.create_csv_file("./can_logs/", "220822_roam")
+            my_file = my_can_write.create_csv_file("./can_logs/", "220906_roam")
             my_headers = my_decoder.get_csv_header()
             my_can_write.write_csv_row(my_file, my_headers)
 
@@ -88,30 +89,9 @@ def main(arb_id: str, can_data: str, dry_run: bool, ofile_path: str) -> dict:
 
 
 
-    my_receiver.stop_listener()
-    my_receiver.exit_program()
+    #my_receiver.stop_listener()
+    #my_receiver.exit_program()
     #time.sleep(1)
-
-'''
-# TODO: this function is not needed and should be removed
-    
-def convert_msg(messages):
-
-    message_pack_dict = None
-    message_pack_list = None
-
-    if messages is not None:
-        message_pack_dict = {}
-        message_pack_list = []
-        for x in range(len(messages)):
-            print(x)
-            message_pack_dict["can_time"] = messages[x].timestamp
-            message_pack_dict["cen_id"] = messages[x].arbitration_id
-            message_pack_dict["cen_data"] = messages[x].data
-            message_pack_list.append(message_pack_dict)
-
-        return message_pack_list
-'''
 
 
 class CanBusListener():

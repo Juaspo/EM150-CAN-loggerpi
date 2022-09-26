@@ -32,6 +32,39 @@ def main(arb_id: str, can_data: str, dry_run: bool, ofile_path: str) -> dict:
         result = ecd.decode_id23(g_TEST_PAYLOAD2)
         ecd.print_results(result)
 
+class RunFile():
+    def __init__(self, *arg, **args):
+        pass
+
+
+    def run_file(self):
+        my_decoder.new_session()
+        filename = "test2"
+        ifile_path = "./test_code/22-08-2022_14-59-16.log"
+        print("input filepath:", ifile_path)
+
+        my_file = my_can_write.create_csv_file("./can_logs/", "220822_roam")
+        my_headers = my_decoder.get_csv_header()
+        my_can_write.write_csv_row(my_file, my_headers)
+
+        with open(ifile_path) as infile:
+            for line in infile:
+                can_data = my_decoder.parse_text(line)
+                decoded_messages = my_decoder.combine_decode_entry(can_data[1], can_data[0], **{'timestamp':can_data[2], 'hit':True})
+                #print("result:", decoded_messages)
+
+                if decoded_messages is not None:
+                    my_can_write.write_csv_dict(my_file, [decoded_messages], my_headers)
+
+
+        my_counter = my_decoder.get_counters()
+        my_counter_str = my_can_write.write_dict_to_file(my_file, my_counter, "\n")
+        print(my_counter_str)
+
+        my_can_write.write_to_file(my_file, my_counter_str)
+        my_can_write.close_file(my_file)
+
+
 
 class CanStates():
     '''
@@ -179,7 +212,7 @@ class EmControllerDecoder():
 
 
         if can_id == 0x10261022 or can_id == 0x10261023:
-            print ("processing data")
+            #print ("processing data")
             x = self.id_match(can_id)
             decoded_data = x(can_data, can_id, timestamp, hit)
             #print("decoded data:", decoded_data)
