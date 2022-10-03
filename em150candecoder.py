@@ -40,10 +40,14 @@ class RunFile():
     def run_file(self):
         my_decoder.new_session()
         filename = "test2"
-        ifile_path = "./test_code/22-08-2022_14-59-16.log"
+        ifile_path = "./can_data/20-09-2022_12-40-38.txt"
         print("input filepath:", ifile_path)
 
-        my_file = my_can_write.create_csv_file("./can_logs/", "220822_roam")
+        for log_file in os.listdir("/can_data"):
+            print("log_file", log_file)
+        
+        return
+        my_file = my_can_write.create_csv_file("./can_data/", "20-09-2022_12-40-38.log")
         my_headers = my_decoder.get_csv_header()
         my_can_write.write_csv_row(my_file, my_headers)
 

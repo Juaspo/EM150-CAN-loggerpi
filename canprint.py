@@ -122,7 +122,7 @@ class WriteLogFile():
         return f
 
 
-    def create_csv_file(self, file_path="./can_logs/", filename="cancsv", mode='a', **kwargs):
+    def create_csv_file(self, file_path="./can_logs/", filename="cancsv", mode='w', **kwargs):
 
         file_path = os.path.join(file_path, filename + '.' + "csv")
         os.makedirs(os.path.dirname(file_path), exist_ok = True)
@@ -140,10 +140,11 @@ class WriteLogFile():
     def write_csv_row(self, file_object, data):
         writer = csv.writer(file_object)
         writer.writerow(data)
+        print(data)
 
 
     def write_csv_dict(self, file_object, dict_data, headers):
-        writer = csv.DictWriter(file_object, fieldnames=headers)
+        writer = csv.DictWriter(file_object, fieldnames=headers, lineterminator='\n')
         for data in dict_data:
             #print("data in canprint:", data)
             writer.writerow(data)
