@@ -1,2 +1,2 @@
-# EM150-CAN-loggerpi
-CAN logger for EM150
+# CanPi EM150-CAN-logger
+CAN logger for based on raspberry pi
